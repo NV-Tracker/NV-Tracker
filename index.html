@@ -558,6 +558,14 @@
                   onclick="document.getElementById('ar_gallery_input').click()">
             🖼 From Gallery
           </button>
+          <!-- v3.1: explicit Save-to-phone button. iPhone needs this — the
+               Web Share API call must come straight from a user click, not
+               from a deeply-nested async chain. Hidden until at least one
+               photo is added. -->
+          <button class="gal" id="ar_save_phone_btn" type="button" style="display:none"
+                  onclick="onSaveAllPhotosClick()">
+            📥 Save to phone
+          </button>
         </div>
         <input id="ar_camera_input"  class="hidden-input" type="file" accept="image/*" capture="environment" onchange="onPhotoPick(event)">
         <input id="ar_gallery_input" class="hidden-input" type="file" accept="image/*" multiple onchange="onPhotoPick(event)">
@@ -1406,11 +1414,14 @@ function renderPhotoList() {
   const counter = document.getElementById('ar_photo_count');
   const camBtn = document.getElementById('ar_cam_btn');
   const galBtn = document.getElementById('ar_gal_btn');
+  const savePhoneBtn = document.getElementById('ar_save_phone_btn');
   list.innerHTML = '';
   counter.textContent = `(${_photos.length}/${MAX_PHOTOS})`;
   const atLimit = _photos.length >= MAX_PHOTOS;
   camBtn.disabled = atLimit;
   galBtn.disabled = atLimit;
+  // v3.1: show "Save to phone" button when there's at least one photo
+  if (savePhoneBtn) savePhoneBtn.style.display = _photos.length > 0 ? '' : 'none';
   if (!_photos.length) { empty.style.display = ''; return; }
   empty.style.display = 'none';
   _photos.forEach((p, i) => {
@@ -1485,12 +1496,31 @@ async function saveReject() {
     saveState();
     toast('Reject saved');
   }
-  if (_photos && _photos.length > 0) {
+  // v3.1: Only auto-save on Capacitor (Android APK), where the Filesystem
+  // plugin writes silently to /Pictures/NVIDIAAudit with no user prompt.
+  // On iPhone / web, the Web Share API needs a direct user gesture, so the
+  // auto-call from this deep async chain was silently failing. iPhone users
+  // now click the new "📥 Save to phone" button on the photo list instead.
+  if (_photos && _photos.length > 0 && isCapacitor()) {
     try { await saveAllPhotosToDevice({ silent: false }); } catch (e) { console.error(e); }
   }
   _editingRejectId = null;
   _photos = [];
   go('audit');
+}
+
+// v3.1: explicit user-click handler for the "📥 Save to phone" button.
+// MUST be called straight from a click event (no awaits before navigator.share)
+// so iOS Safari accepts it as a user-activation share request.
+function onSaveAllPhotosClick() {
+  if (!_photos || !_photos.length) { toast('No photos yet — add one first.'); return; }
+  // Fire-and-forget so the synchronous click handler returns immediately;
+  // saveAllPhotosToDevice itself calls navigator.share() before any await,
+  // preserving the user-gesture context.
+  saveAllPhotosToDevice({ silent: false }).catch(e => {
+    console.error('save-to-phone failed:', e);
+    toast('Save failed: ' + (e.message || e));
+  });
 }
 
 /* =============================================================

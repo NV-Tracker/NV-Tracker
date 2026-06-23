@@ -15,7 +15,7 @@
 <meta http-equiv="Expires" content="0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzc2QjkwMCIvPjx0ZXh0IHg9IjE2IiB5PSIyNCIgZm9udC1mYW1pbHk9IkFyaWFsIEJsYWNrLEFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjIiIGZvbnQtd2VpZ2h0PSI5MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiMwMDAiPk48L3RleHQ+PC9zdmc+">
 <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj4KICA8cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjM2IiBmaWxsPSIjNzZCOTAwIi8+CiAgPHRleHQgeD0iOTYiIHk9IjEzOCIgZm9udC1mYW1pbHk9IkFyaWFsIEJsYWNrLCBBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNDAiIGZvbnQtd2VpZ2h0PSI5MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiMwMDAwMDAiPk48L3RleHQ+CiAgPHRleHQgeD0iOTYiIHk9IjE3MiIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMDAwMDAwIj5BVURJVDwvdGV4dD4KPC9zdmc+">
-<title>NVIDIA Tracker v3.0</title>
+<title>NVIDIA Tracker v3.2</title>
 <!-- PptxGenJS 3.12.0 inlined for offline use -->
 <script>
 /* PptxGenJS 3.12.0 @ 2023-03-20T03:12:31.375Z */
@@ -440,7 +440,7 @@
   <div class="topbar">
     <button class="back" id="backBtn" style="display:none">&lsaquo;</button>
     <h1 id="screenTitle">NVIDIA Tracker</h1>
-    <span class="ver" id="topbarVersion" onclick="openReleaseNotes()">v3.0</span>
+    <span class="ver" id="topbarVersion" onclick="openReleaseNotes()">v3.2</span>
   </div>
 
   <main>
@@ -744,7 +744,7 @@
  *
  * Backwards compat handled in normalizeReject().
  * ============================================================= */
-const APP_VERSION = '3.1';
+const APP_VERSION = '3.2';
 const STORAGE_KEY = 'nvaudit_v1';
 const PRESET_TYPES = ['Audit', 'Bring Up', 'EVT', 'DVT', 'PVT', 'MP',
                        'TS#', 'FAI', 'ECO', '8D'];
@@ -3058,6 +3058,13 @@ function _showBootError(e) {
   } catch (_) {}
 }
 try {
+  // Keep the title + top-bar version label in lockstep with APP_VERSION so a
+  // single constant bump propagates everywhere (no more stale hardcoded vX.Y).
+  try {
+    document.title = 'NVIDIA Tracker v' + APP_VERSION;
+    var _tv = document.getElementById('topbarVersion');
+    if (_tv) _tv.textContent = 'v' + APP_VERSION;
+  } catch (_) {}
   loadState();
   refreshDatalists();
   renderHome();
@@ -3065,7 +3072,21 @@ try {
 } catch (e) {
   _showBootError(e);
 }
-window.addEventListener('error', function(ev) { _showBootError(ev.error || ev.message); });
+window.addEventListener('error', function(ev) {
+  // Ignore opaque cross-origin "Script error." events. Sandboxed/embedded hosts
+  // (e.g. the SharePoint mobile file viewer, or host-injected scripts like
+  // Copilot/telemetry) report unrelated errors with no detail and no error
+  // object. They do NOT mean our app failed — by this point it has already
+  // booted and rendered — so the big red "boot error" banner is wrong and
+  // alarming for them. Only surface real, same-origin errors that carry detail.
+  var opaque = !ev.error && (!ev.filename || /^script error\.?$/i.test(ev.message || ''));
+  if (opaque) { console.warn('Ignoring opaque cross-origin error event:', ev.message); return; }
+  _showBootError(ev.error || ev.message);
+});
+// Swallow opaque cross-origin promise rejections for the same reason.
+window.addEventListener('unhandledrejection', function(ev) {
+  try { console.warn('Unhandled rejection:', (ev.reason && (ev.reason.stack || ev.reason.message)) || ev.reason); } catch (_) {}
+});
 
 console.log('%cNVIDIA Tracker v' + APP_VERSION, 'color:#76B900;font-weight:bold;font-size:16px');
 console.log('Storage key:', STORAGE_KEY);

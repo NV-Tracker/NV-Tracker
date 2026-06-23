@@ -744,7 +744,7 @@
  *
  * Backwards compat handled in normalizeReject().
  * ============================================================= */
-const APP_VERSION = '3.0';
+const APP_VERSION = '3.1';
 const STORAGE_KEY = 'nvaudit_v1';
 const PRESET_TYPES = ['Audit', 'Bring Up', 'EVT', 'DVT', 'PVT', 'MP',
                        'TS#', 'FAI', 'ECO', '8D'];
@@ -990,6 +990,11 @@ const BACK_TARGET = {
 };
 let _currentScreen = 'home';
 let _suppressHistory = false;
+// True once a real History API write succeeds. In sandboxed hosts (e.g. the
+// SharePoint mobile file viewer) pushState throws and is swallowed, so this
+// stays false and we must NOT act on the spurious null-state popstate events
+// such hosts emit — doing so used to bounce the user to the home screen.
+let _historyWorks = false;
 function go(name) {
   // Exit bulk-select mode whenever screen changes
   if (typeof exitBulkMode === 'function') exitBulkMode(true);
@@ -999,7 +1004,7 @@ function go(name) {
   el.classList.add('active');
   _currentScreen = name;
   if (!_suppressHistory) {
-    try { history.pushState({screen: name}, '', '#' + name); } catch(e) {}
+    try { history.pushState({screen: name}, '', '#' + name); _historyWorks = true; } catch(e) {}
   }
 
   let title = TITLES[name];
@@ -2533,6 +2538,10 @@ function clearValidationErrors() {
 
 // ---- Back gesture ----
 window.addEventListener('popstate', (e) => {
+  // Ignore popstate in sandboxed hosts where our pushState never worked.
+  // There, a stray popstate carries a null state and would fall back to
+  // 'home', bouncing the user off the form they were filling in.
+  if (!_historyWorks) return;
   const target = (e.state && e.state.screen) || 'home';
   _suppressHistory = true;
   go(target);

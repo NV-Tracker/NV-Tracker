@@ -15,7 +15,7 @@
 <meta http-equiv="Expires" content="0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzc2QjkwMCIvPjx0ZXh0IHg9IjE2IiB5PSIyNCIgZm9udC1mYW1pbHk9IkFyaWFsIEJsYWNrLEFyaWFsLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjIiIGZvbnQtd2VpZ2h0PSI5MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiMwMDAiPk48L3RleHQ+PC9zdmc+">
 <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj4KICA8cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjM2IiBmaWxsPSIjNzZCOTAwIi8+CiAgPHRleHQgeD0iOTYiIHk9IjEzOCIgZm9udC1mYW1pbHk9IkFyaWFsIEJsYWNrLCBBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNDAiIGZvbnQtd2VpZ2h0PSI5MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiMwMDAwMDAiPk48L3RleHQ+CiAgPHRleHQgeD0iOTYiIHk9IjE3MiIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMDAwMDAwIj5BVURJVDwvdGV4dD4KPC9zdmc+">
-<title>NVIDIA Tracker v3.2</title>
+<title>NVIDIA Tracker v3.3</title>
 <!-- PptxGenJS 3.12.0 inlined for offline use -->
 <script>
 /* PptxGenJS 3.12.0 @ 2023-03-20T03:12:31.375Z */
@@ -440,7 +440,7 @@
   <div class="topbar">
     <button class="back" id="backBtn" style="display:none">&lsaquo;</button>
     <h1 id="screenTitle">NVIDIA Tracker</h1>
-    <span class="ver" id="topbarVersion" onclick="openReleaseNotes()">v3.2</span>
+    <span class="ver" id="topbarVersion" onclick="openReleaseNotes()">v3.3</span>
   </div>
 
   <main>
@@ -521,6 +521,7 @@
         <div class="btn-row">
           <button class="btn btn-primary" onclick="goAddReject()">+ Add Reject</button>
           <button class="btn btn-secondary" onclick="goExport()">Export PPTX</button>
+          <button class="btn btn-secondary" id="saveAllPhotosBtn" onclick="saveAllAuditPhotosToDevice()">📥 Save Photos</button>
           <button class="btn btn-secondary" id="bulkSelectBtn" onclick="enterBulkMode()">☑ Select</button>
         </div>
         <div id="bulkActionBar" class="bulk-bar">
@@ -744,7 +745,7 @@
  *
  * Backwards compat handled in normalizeReject().
  * ============================================================= */
-const APP_VERSION = '3.2';
+const APP_VERSION = '3.3';
 const STORAGE_KEY = 'nvaudit_v1';
 const PRESET_TYPES = ['Audit', 'Bring Up', 'EVT', 'DVT', 'PVT', 'MP',
                        'TS#', 'FAI', 'ECO', '8D'];
@@ -1526,6 +1527,29 @@ function onSaveAllPhotosClick() {
     console.error('save-to-phone failed:', e);
     toast('Save failed: ' + (e.message || e));
   });
+}
+
+// Save EVERY photo across ALL rejects in the current audit to the device.
+// Called from the "📥 Save Photos" button on the audit screen. Kept synchronous
+// up to the navigator.share() call inside saveAllPhotosToDevice so iOS Safari
+// accepts it as a user-activation gesture.
+function saveAllAuditPhotosToDevice() {
+  const a = currentAudit();
+  if (!a) { toast('No audit open'); return; }
+  const photos = [];
+  state.rejects
+    .filter(r => r.audit_id === a.id)
+    .forEach(r => (r.photos || []).forEach(p => {
+      if (p && p.src) photos.push({ src: p.src, caption: p.caption || '' });
+    }));
+  if (!photos.length) { toast('No photos in this audit yet.'); return; }
+  const prefix = 'nvaudit-' + String(a.supplier || 'audit')
+    .replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+  saveAllPhotosToDevice({ photos: photos, namePrefix: prefix || 'nvaudit', silent: false })
+    .catch(e => {
+      console.error('save-all-audit-photos failed:', e);
+      toast('Save failed: ' + (e.message || e));
+    });
 }
 
 /* =============================================================
@@ -2775,11 +2799,14 @@ function _isIOS() {
 
 async function saveAllPhotosToDevice(opts) {
   opts = opts || {};
-  if (!_photos || _photos.length === 0) {
+  // Defaults to the reject form's photos (_photos); callers can pass an explicit
+  // set via opts.photos (e.g. every photo in the whole audit) + opts.namePrefix.
+  const photos = opts.photos || _photos;
+  const namePrefix = opts.namePrefix || ('nvaudit-reject-' + (_editingRejectId || 'new'));
+  if (!photos || photos.length === 0) {
     if (!opts.silent) toast('No photos to save');
     return;
   }
-  const rid = _editingRejectId || 'new';
 
   // --- Capacitor APK: write directly to Pictures/ via Filesystem plugin.
   // Android DownloadManager can't handle blob: URLs, so the <a download>
@@ -2788,8 +2815,8 @@ async function saveAllPhotosToDevice(opts) {
     const Filesystem = window.Capacitor.Plugins.Filesystem;
     const stamp = Date.now();
     let saved = 0, failed = 0;
-    for (let i = 0; i < _photos.length; i++) {
-      const p = _photos[i];
+    for (let i = 0; i < photos.length; i++) {
+      const p = photos[i];
       if (!p || !p.src) continue;
       const m = p.src.match(/^data:image\/(png|jpe?g);base64,(.+)$/i);
       if (!m) { failed++; continue; }
@@ -2818,11 +2845,11 @@ async function saveAllPhotosToDevice(opts) {
 
   // --- Web / iOS / desktop path: build File[] then try Web Share, then blob download.
   const files = [];
-  for (let i = 0; i < _photos.length; i++) {
-    const p = _photos[i];
+  for (let i = 0; i < photos.length; i++) {
+    const p = photos[i];
     if (!p || !p.src) continue;
     const ext = (p.src.startsWith('data:image/png') ? 'png' : 'jpg');
-    const filename = `nvaudit-reject-${rid}-photo-${i+1}.${ext}`;
+    const filename = `${namePrefix}-photo-${i+1}.${ext}`;
     const blob = _dataURLtoBlob(p.src);
     try { files.push(new File([blob], filename, { type: blob.type })); }
     catch (e) {
